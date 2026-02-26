@@ -1,0 +1,21 @@
+# trusted-mcp permissive policy
+# Log-only mode — monitors but does not block
+version: "1.0"
+name: "permissive-policy"
+
+proxy:
+  transport: stdio
+  timeout_ms: 60000
+  max_concurrent: 20
+
+scanners:
+  - name: regex
+    enabled: true
+    settings:
+      sensitivity: low
+
+audit:
+  enabled: true
+  storage: file
+  path: .trusted-mcp/audit.jsonl
+  max_size_mb: 200

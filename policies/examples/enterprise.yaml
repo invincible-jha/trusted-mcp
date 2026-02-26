@@ -1,0 +1,64 @@
+# Example: Enterprise MCP policy structure
+# Template showing how enterprise deployments configure trusted-mcp
+# Note: Enterprise scanners (ML classifier, Cognitive Firewall, etc.)
+# are available separately — see UPGRADE_TO_AGENTSHIELD.md
+version: "1.0"
+name: "enterprise-template"
+
+proxy:
+  transport: sse
+  upstream: "https://mcp.internal.example.com/sse"
+  timeout_ms: 10000
+  max_concurrent: 50
+
+scanners:
+  - name: description_hash
+    enabled: true
+    settings:
+      store_path: /var/lib/trusted-mcp/hashes.json
+      auto_approve_new: false
+
+  - name: allowlist
+    enabled: true
+    settings:
+      mode: allowlist
+      tools:
+        allow:
+          - "github:*"
+          - "jira:read_*"
+          - "confluence:read_*"
+          - "slack:post_message"
+        block:
+          - "shell:*"
+          - "filesystem:delete_*"
+
+  - name: regex
+    enabled: true
+    settings:
+      sensitivity: high
+
+  - name: argument
+    enabled: true
+    settings:
+      max_string_length: 10000
+
+  - name: pii
+    enabled: true
+    settings:
+      action_on_detect: block
+      scan_requests: true
+      pii_types:
+        - ssn
+        - credit_card
+        - cloud_credential
+
+  # Enterprise scanners register via plugin system:
+  # - name: cognitive_firewall    # Enterprise only
+  # - name: ml_classifier         # Enterprise only
+  # - name: session_correlation    # Enterprise only
+
+audit:
+  enabled: true
+  storage: file
+  path: /var/log/trusted-mcp/audit.jsonl
+  max_size_mb: 500

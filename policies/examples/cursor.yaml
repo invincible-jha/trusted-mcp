@@ -1,0 +1,30 @@
+# Example: Cursor IDE MCP protection
+# Designed for development workflows with reasonable defaults
+version: "1.0"
+name: "cursor-ide"
+
+proxy:
+  transport: stdio
+  timeout_ms: 45000
+  max_concurrent: 15
+
+scanners:
+  - name: description_hash
+    enabled: true
+    settings:
+      store_path: .trusted-mcp/hashes.json
+
+  - name: regex
+    enabled: true
+    settings:
+      sensitivity: medium
+
+  - name: argument
+    enabled: true
+    settings:
+      max_string_length: 50000
+
+audit:
+  enabled: true
+  storage: file
+  path: .trusted-mcp/audit.jsonl

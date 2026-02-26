@@ -1,0 +1,41 @@
+# Example: Claude Desktop MCP protection
+# Protects Claude Desktop MCP connections with balanced security
+version: "1.0"
+name: "claude-desktop"
+
+proxy:
+  transport: stdio
+  timeout_ms: 30000
+  max_concurrent: 10
+
+scanners:
+  - name: description_hash
+    enabled: true
+    settings:
+      store_path: ~/.trusted-mcp/hashes.json
+
+  - name: allowlist
+    enabled: true
+    settings:
+      mode: blocklist
+      tools:
+        block:
+          - "shell:execute_command"
+          - "filesystem:delete_file"
+          - "filesystem:write_file"
+          - "filesystem:move_file"
+
+  - name: regex
+    enabled: true
+    settings:
+      sensitivity: medium
+
+  - name: pii
+    enabled: true
+    settings:
+      action_on_detect: warn
+
+audit:
+  enabled: true
+  storage: file
+  path: ~/.trusted-mcp/audit.jsonl

@@ -1,0 +1,18 @@
+version: "3.8"
+
+services:
+  trusted-mcp-proxy:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./policy.yaml:/app/policy.yaml:ro
+      - audit-data:/app/audit
+    environment:
+      - TRUSTED_MCP_CONFIG=/app/policy.yaml
+    restart: unless-stopped
+
+volumes:
+  audit-data:
