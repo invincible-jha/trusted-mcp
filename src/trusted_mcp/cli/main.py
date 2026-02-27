@@ -320,6 +320,185 @@ def certify(
         console.print(f"[green]Attestation saved to {attestation_path}[/green]")
 
 
+@cli.command(name="approve")
+@click.option(
+    "--server",
+    "-s",
+    required=True,
+    help="MCP server name whose tool descriptions to approve.",
+)
+@click.option(
+    "--store",
+    "store_path",
+    type=click.Path(),
+    default=None,
+    help="Path to hash store JSON file. Defaults to ~/.trusted-mcp/approved_hashes.json.",
+)
+@click.option(
+    "--tool",
+    "tool_name",
+    default=None,
+    help="Approve a specific tool by name (server:tool format). If omitted, approve interactively.",
+)
+@click.option(
+    "--description",
+    "-d",
+    "description_text",
+    default=None,
+    help="Tool description text to approve (used with --tool).",
+)
+def approve(
+    server: str,
+    store_path: str | None,
+    tool_name: str | None,
+    description_text: str | None,
+) -> None:
+    """Approve current tool descriptions for a server, storing hashes.
+
+    Records the SHA-256 hash of each approved tool description so that
+    future changes can be detected. Run this command after reviewing
+    the tool descriptions for the first time or after a confirmed update.
+    """
+    from pathlib import Path as _Path
+    from trusted_mcp.drift import DriftDetector, HashStore
+
+    store: HashStore | None = None
+    if store_path:
+        store = HashStore(store_path=_Path(store_path))
+
+    detector = DriftDetector(store=store)
+
+    if tool_name and description_text:
+        # Single tool approval via CLI flags
+        full_key = tool_name if ":" in tool_name else f"{server}:{tool_name}"
+        detector.approve(full_key, description_text)
+        console.print(f"[green]Approved:[/green] {full_key}")
+        console.print(f"  Description: {description_text[:80]}{'...' if len(description_text) > 80 else ''}")
+    else:
+        console.print(f"[bold]Approval mode for server:[/bold] {server}")
+        console.print()
+        console.print(
+            "[yellow]Connect this command to a live MCP server to fetch and approve tool "
+            "descriptions automatically. For now, use --tool and --description flags to "
+            "approve individual tools.[/yellow]"
+        )
+        console.print()
+        console.print("Example:")
+        console.print(
+            f'  trusted-mcp approve --server {server} '
+            f'--tool "my_tool" --description "Reads a file safely."'
+        )
+
+    approved = detector.list_approved()
+    if approved:
+        console.print(f"\n[dim]Total approved tools: {len(approved)}[/dim]")
+
+
+@cli.command(name="drift-check")
+@click.option(
+    "--server",
+    "-s",
+    required=True,
+    help="MCP server name to check for drift.",
+)
+@click.option(
+    "--store",
+    "store_path",
+    type=click.Path(),
+    default=None,
+    help="Path to hash store JSON file. Defaults to ~/.trusted-mcp/approved_hashes.json.",
+)
+@click.option(
+    "--tool",
+    "tool_name",
+    default=None,
+    help="Check a specific tool by name (server:tool format).",
+)
+@click.option(
+    "--description",
+    "-d",
+    "description_text",
+    default=None,
+    help="Current tool description to check against approved hash (used with --tool).",
+)
+@click.option(
+    "--format",
+    "output_format",
+    type=click.Choice(["table", "json"]),
+    default="table",
+    help="Output format.",
+)
+def drift_check(
+    server: str,
+    store_path: str | None,
+    tool_name: str | None,
+    description_text: str | None,
+    output_format: str,
+) -> None:
+    """Check current tool descriptions against approved hashes.
+
+    Detects whether any tool descriptions have changed since they
+    were last approved. A changed description may indicate a
+    tool poisoning (rug-pull) attack.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    from trusted_mcp.drift import DriftDetector, HashStore
+
+    store: HashStore | None = None
+    if store_path:
+        store = HashStore(store_path=_Path(store_path))
+
+    detector = DriftDetector(store=store)
+
+    if tool_name and description_text:
+        full_key = tool_name if ":" in tool_name else f"{server}:{tool_name}"
+        result = detector.check(full_key, description_text)
+
+        if output_format == "json":
+            data = {
+                "tool": full_key,
+                "drifted": result.drifted,
+                "severity": result.severity,
+                "unapproved": result.unapproved,
+                "diff": result.diff,
+            }
+            console.print_json(_json.dumps(data, indent=2))
+        else:
+            if result.unapproved:
+                console.print(f"[yellow]UNAPPROVED[/yellow] {full_key} — no approved hash found")
+            elif result.drifted:
+                color = "red" if result.severity == "CRITICAL" else "yellow"
+                console.print(
+                    f"[{color}]DRIFT DETECTED[/{color}] {full_key} "
+                    f"(severity: {result.severity})"
+                )
+                if result.diff:
+                    console.print("\n[dim]Diff:[/dim]")
+                    console.print(result.diff)
+            else:
+                console.print(f"[green]OK[/green] {full_key} — description matches approved hash")
+    else:
+        approved = detector.list_approved()
+        server_tools = [k for k in approved if k.startswith(f"{server}:")]
+
+        if not server_tools:
+            console.print(
+                f"[yellow]No approved tools found for server {server!r}.[/yellow]\n"
+                "Run 'trusted-mcp approve' first."
+            )
+            return
+
+        console.print(f"[bold]Drift check for server:[/bold] {server}")
+        console.print(
+            "[yellow]Connect to a live MCP server to check current descriptions. "
+            "Use --tool and --description to check individual tools.[/yellow]"
+        )
+        console.print(f"\n[dim]Approved tools for {server}:[/dim]")
+        for tool_key in server_tools:
+            console.print(f"  - {tool_key}")
+
+
 @cli.command(name="plugins")
 def plugins_command() -> None:
     """List all registered scanner plugins."""

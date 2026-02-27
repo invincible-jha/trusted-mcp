@@ -170,7 +170,7 @@ class TestAuditLoggerInternals:
 
 class TestAuditLoggerAsync:
     def _run(self, coro: object) -> object:
-        return asyncio.get_event_loop().run_until_complete(coro)  # type: ignore[arg-type]
+        return asyncio.run(coro)  # type: ignore[arg-type]
 
     def _captured_logger(self) -> tuple[AuditLogger, list[AuditEntry]]:
         captured: list[AuditEntry] = []
@@ -304,78 +304,76 @@ class TestAuditFormatter:
 # ---------------------------------------------------------------------------
 
 class TestNullStorage:
-    def test_write_is_noop(self) -> None:
+    async def test_write_is_noop(self) -> None:
         storage = NullStorage()
         entry = _make_entry()
-        asyncio.get_event_loop().run_until_complete(storage.write(entry))  # must not raise
+        await storage.write(entry)  # must not raise
 
-    def test_close_is_noop(self) -> None:
+    async def test_close_is_noop(self) -> None:
         storage = NullStorage()
-        asyncio.get_event_loop().run_until_complete(storage.close())  # must not raise
+        await storage.close()  # must not raise
 
 
 class TestStdoutStorage:
-    def test_write_outputs_jsonl_to_stdout(self, capsys: pytest.CaptureFixture[str]) -> None:
+    async def test_write_outputs_jsonl_to_stdout(self, capsys: pytest.CaptureFixture[str]) -> None:
         storage = StdoutStorage()
         entry = _make_entry(tool_name="stdout_tool")
-        asyncio.get_event_loop().run_until_complete(storage.write(entry))
+        await storage.write(entry)
         captured = capsys.readouterr()
         parsed = json.loads(captured.out.strip())
         assert parsed["tool_name"] == "stdout_tool"
 
-    def test_write_flushes_stdout(self) -> None:
+    async def test_write_flushes_stdout(self) -> None:
         storage = StdoutStorage()
         entry = _make_entry()
         # Should complete without raising
-        asyncio.get_event_loop().run_until_complete(storage.write(entry))
+        await storage.write(entry)
 
 
 class TestFileStorage:
-    def test_write_creates_file(self, tmp_path: Path) -> None:
+    async def test_write_creates_file(self, tmp_path: Path) -> None:
         log_file = tmp_path / "audit.jsonl"
         storage = FileStorage(log_file)
         entry = _make_entry(tool_name="file_tool")
-        asyncio.get_event_loop().run_until_complete(storage.write(entry))
+        await storage.write(entry)
         assert log_file.exists()
 
-    def test_write_appends_jsonl(self, tmp_path: Path) -> None:
+    async def test_write_appends_jsonl(self, tmp_path: Path) -> None:
         log_file = tmp_path / "audit.jsonl"
         storage = FileStorage(log_file)
         for tool in ["tool_a", "tool_b"]:
-            asyncio.get_event_loop().run_until_complete(
-                storage.write(_make_entry(tool_name=tool))
-            )
+            await storage.write(_make_entry(tool_name=tool))
         lines = log_file.read_text(encoding="utf-8").strip().split("\n")
         assert len(lines) == 2
         assert json.loads(lines[0])["tool_name"] == "tool_a"
 
-    def test_write_creates_parent_directories(self, tmp_path: Path) -> None:
+    async def test_write_creates_parent_directories(self, tmp_path: Path) -> None:
         log_file = tmp_path / "logs" / "sub" / "audit.jsonl"
         storage = FileStorage(log_file)
-        asyncio.get_event_loop().run_until_complete(storage.write(_make_entry()))
+        await storage.write(_make_entry())
         assert log_file.exists()
 
-    def test_rotation_not_triggered_below_max_size(self, tmp_path: Path) -> None:
+    async def test_rotation_not_triggered_below_max_size(self, tmp_path: Path) -> None:
         log_file = tmp_path / "audit.jsonl"
         storage = FileStorage(log_file, max_size_mb=100.0)
         # Write one small entry — rotation must not happen
-        asyncio.get_event_loop().run_until_complete(storage.write(_make_entry()))
+        await storage.write(_make_entry())
         rotated = log_file.with_suffix(".1")
         assert not rotated.exists()
 
-    def test_rotation_disabled_when_max_size_zero(self, tmp_path: Path) -> None:
+    async def test_rotation_disabled_when_max_size_zero(self, tmp_path: Path) -> None:
         log_file = tmp_path / "audit.jsonl"
         storage = FileStorage(log_file, max_size_mb=0)
-        asyncio.get_event_loop().run_until_complete(storage.write(_make_entry()))
+        await storage.write(_make_entry())
         # No rotation file should appear
         assert not log_file.with_suffix(".1").exists()
 
-    def test_rotation_triggered_when_file_exceeds_max_size(self, tmp_path: Path) -> None:
+    async def test_rotation_triggered_when_file_exceeds_max_size(self, tmp_path: Path) -> None:
         log_file = tmp_path / "audit.jsonl"
         # Create a "large" existing log file (1 byte threshold)
         log_file.write_text("x" * 10, encoding="utf-8")
         # Use a very small max_size_mb so any file triggers rotation
         storage = FileStorage(log_file, max_size_mb=0.000001)
-        asyncio.get_event_loop().run_until_complete(storage.write(_make_entry()))
+        await storage.write(_make_entry())
         # Original file should have been rotated
         assert log_file.with_suffix(".1").exists()
