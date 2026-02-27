@@ -25,7 +25,7 @@ Writing a Custom Scanner
 
 What is NOT in this module
 --------------------------
-- Tool Trust Decay algorithm (not included in this package)
+- Advanced trust scoring extensions (not included in this package)
 - ML-based prompt injection classifier (not included in this package)
 - Session-linking / cross-session attack correlation (not included in this package)
 - Behavioral drift detection (not included in this package)

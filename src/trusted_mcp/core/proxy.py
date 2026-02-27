@@ -29,7 +29,7 @@ Supported Transports
 
 What is NOT This Module
 -----------------------
-- Tool Trust Decay algorithm (not included in this package)
+- Advanced trust scoring extensions (not included in this package)
 - Session-linking / cross-session correlation (not included in this package)
 - Advanced threat intelligence feed integration (not included in this package)
 - ML-based classifier inference (not included in this package)

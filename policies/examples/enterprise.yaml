@@ -1,6 +1,6 @@
 # Example: Enterprise MCP policy structure
 # Template showing how enterprise deployments configure trusted-mcp
-# Note: Enterprise scanners (ML classifier, Cognitive Firewall, etc.)
+# Note: Additional scanners (ML classifier, advanced behavioral analysis, etc.)
 # are available separately — see UPGRADE_TO_AGENTSHIELD.md
 version: "1.0"
 name: "enterprise-template"
@@ -52,10 +52,10 @@ scanners:
         - credit_card
         - cloud_credential
 
-  # Enterprise scanners register via plugin system:
-  # - name: cognitive_firewall    # Enterprise only
-  # - name: ml_classifier         # Enterprise only
-  # - name: session_correlation    # Enterprise only
+  # Additional scanners register via plugin system:
+  # - name: advanced_scanning
+  # - name: ml_classifier
+  # - name: session_correlation
 
 audit:
   enabled: true

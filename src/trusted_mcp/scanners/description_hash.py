@@ -10,7 +10,7 @@ What This Is NOT
 This is basic hash comparison, NOT:
 - Behavioral drift detection (available via plugins)
 - Semantic similarity analysis (available via plugins)
-- Tool Trust Decay algorithm (available via plugins)
+- Advanced trust scoring extensions (available via plugins)
 """
 from __future__ import annotations
 
