@@ -1,0 +1,34 @@
+{
+  "name": "@aumos/trusted-mcp",
+  "version": "0.1.0",
+  "description": "TypeScript client for the AumOS TrustedMCP security proxy — policy management, audit log access, and tool allowlist control",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.0"
+  },
+  "keywords": [
+    "aumos",
+    "trusted-mcp",
+    "mcp",
+    "security-proxy",
+    "policy",
+    "typescript"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/invincible-jha/trusted-mcp"
+  }
+}
