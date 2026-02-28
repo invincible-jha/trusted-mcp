@@ -302,12 +302,3 @@ export function createTrustedMCPClient(
   };
 }
 
-/** Re-export key types for convenience. */
-export type {
-  ProxyStatus,
-  ProxyConfig,
-  ScanPolicy,
-  AllowlistRule,
-  AuditLogResponse,
-  ToolCallResult,
-};
