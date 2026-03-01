@@ -1,8 +1,12 @@
 /**
  * HTTP client for the TrustedMCP security proxy API.
  *
- * Uses the Fetch API (available natively in Node 18+, browsers, and Deno).
- * No external dependencies required.
+ * Delegates all HTTP transport to `@aumos/sdk-core` which provides
+ * automatic retry with exponential back-off, timeout management via
+ * `AbortSignal.timeout`, interceptor support, and a typed error hierarchy.
+ *
+ * The public-facing `ApiResult<T>` envelope is preserved for full
+ * backward compatibility with existing callers.
  *
  * @example
  * ```ts
@@ -17,9 +21,17 @@
  * ```
  */
 
+import {
+  createHttpClient,
+  HttpError,
+  NetworkError,
+  TimeoutError,
+  AumosError,
+  type HttpClient,
+} from "@aumos/sdk-core";
+
 import type {
   AllowlistRule,
-  ApiError,
   ApiResult,
   AuditLogResponse,
   ProxyConfig,
@@ -43,55 +55,51 @@ export interface TrustedMCPClientConfig {
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Internal adapter
 // ---------------------------------------------------------------------------
 
-async function fetchJson<T>(
-  url: string,
-  init: RequestInit,
-  timeoutMs: number,
+async function callApi<T>(
+  operation: () => Promise<{ readonly data: T; readonly status: number }>,
 ): Promise<ApiResult<T>> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const response = await fetch(url, { ...init, signal: controller.signal });
-    clearTimeout(timeoutId);
-
-    const body = await response.json() as unknown;
-
-    if (!response.ok) {
-      const errorBody = body as Partial<ApiError>;
+    const response = await operation();
+    return { ok: true, data: response.data };
+  } catch (error: unknown) {
+    if (error instanceof HttpError) {
       return {
         ok: false,
-        error: {
-          error: errorBody.error ?? "Unknown error",
-          detail: errorBody.detail ?? "",
-        },
-        status: response.status,
+        error: { error: error.message, detail: String(error.body ?? "") },
+        status: error.statusCode,
       };
     }
-
-    return { ok: true, data: body as T };
-  } catch (err: unknown) {
-    clearTimeout(timeoutId);
-    const message = err instanceof Error ? err.message : String(err);
+    if (error instanceof TimeoutError) {
+      return {
+        ok: false,
+        error: { error: "Request timed out", detail: error.message },
+        status: 0,
+      };
+    }
+    if (error instanceof NetworkError) {
+      return {
+        ok: false,
+        error: { error: "Network error", detail: error.message },
+        status: 0,
+      };
+    }
+    if (error instanceof AumosError) {
+      return {
+        ok: false,
+        error: { error: error.code, detail: error.message },
+        status: error.statusCode ?? 0,
+      };
+    }
+    const message = error instanceof Error ? error.message : String(error);
     return {
       ok: false,
-      error: { error: "Network error", detail: message },
+      error: { error: "Unexpected error", detail: message },
       status: 0,
     };
   }
-}
-
-function buildHeaders(
-  extraHeaders: Readonly<Record<string, string>> | undefined,
-): Record<string, string> {
-  return {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    ...extraHeaders,
-  };
 }
 
 // ---------------------------------------------------------------------------
@@ -187,27 +195,22 @@ export interface TrustedMCPClient {
 export function createTrustedMCPClient(
   config: TrustedMCPClientConfig,
 ): TrustedMCPClient {
-  const { baseUrl, timeoutMs = 10_000, headers: extraHeaders } = config;
-  const baseHeaders = buildHeaders(extraHeaders);
+  const http: HttpClient = createHttpClient({
+    baseUrl: config.baseUrl,
+    timeout: config.timeoutMs ?? 10_000,
+    defaultHeaders: config.headers,
+  });
 
   return {
-    async getProxyStatus(): Promise<ApiResult<ProxyStatus>> {
-      return fetchJson<ProxyStatus>(
-        `${baseUrl}/proxy/status`,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
-      );
+    getProxyStatus(): Promise<ApiResult<ProxyStatus>> {
+      return callApi(() => http.get<ProxyStatus>("/proxy/status"));
     },
 
-    async getProxyConfig(): Promise<ApiResult<ProxyConfig>> {
-      return fetchJson<ProxyConfig>(
-        `${baseUrl}/proxy/config`,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
-      );
+    getProxyConfig(): Promise<ApiResult<ProxyConfig>> {
+      return callApi(() => http.get<ProxyConfig>("/proxy/config"));
     },
 
-    async getAuditLog(
+    getAuditLog(
       options: {
         agentId?: string;
         toolName?: string;
@@ -216,89 +219,52 @@ export function createTrustedMCPClient(
         limit?: number;
       } = {},
     ): Promise<ApiResult<AuditLogResponse>> {
-      const params = new URLSearchParams();
-      if (options.agentId !== undefined) params.set("agent_id", options.agentId);
-      if (options.toolName !== undefined) params.set("tool_name", options.toolName);
-      if (options.outcome !== undefined) params.set("outcome", options.outcome);
-      if (options.cursor !== undefined) params.set("cursor", options.cursor);
-      if (options.limit !== undefined) params.set("limit", String(options.limit));
-
-      const queryString = params.toString();
-      const url = queryString
-        ? `${baseUrl}/audit?${queryString}`
-        : `${baseUrl}/audit`;
-
-      return fetchJson<AuditLogResponse>(
-        url,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
+      const queryParams: Record<string, string> = {};
+      if (options.agentId !== undefined) queryParams["agent_id"] = options.agentId;
+      if (options.toolName !== undefined) queryParams["tool_name"] = options.toolName;
+      if (options.outcome !== undefined) queryParams["outcome"] = options.outcome;
+      if (options.cursor !== undefined) queryParams["cursor"] = options.cursor;
+      if (options.limit !== undefined) queryParams["limit"] = String(options.limit);
+      return callApi(() =>
+        http.get<AuditLogResponse>("/audit", { queryParams }),
       );
     },
 
-    async updatePolicy(
+    updatePolicy(
       policy: Omit<ScanPolicy, "policy_id" | "updated_at">,
     ): Promise<ApiResult<ScanPolicy>> {
-      return fetchJson<ScanPolicy>(
-        `${baseUrl}/policy`,
-        {
-          method: "PUT",
-          headers: baseHeaders,
-          body: JSON.stringify(policy),
-        },
-        timeoutMs,
-      );
+      return callApi(() => http.put<ScanPolicy>("/policy", policy));
     },
 
-    async getToolAllowlist(
+    getToolAllowlist(
       options: { agentId?: string; enabledOnly?: boolean } = {},
     ): Promise<ApiResult<readonly AllowlistRule[]>> {
-      const params = new URLSearchParams();
-      if (options.agentId !== undefined) params.set("agent_id", options.agentId);
+      const queryParams: Record<string, string> = {};
+      if (options.agentId !== undefined) queryParams["agent_id"] = options.agentId;
       if (options.enabledOnly !== undefined) {
-        params.set("enabled_only", String(options.enabledOnly));
+        queryParams["enabled_only"] = String(options.enabledOnly);
       }
-
-      const queryString = params.toString();
-      const url = queryString
-        ? `${baseUrl}/allowlist?${queryString}`
-        : `${baseUrl}/allowlist`;
-
-      return fetchJson<readonly AllowlistRule[]>(
-        url,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
+      return callApi(() =>
+        http.get<readonly AllowlistRule[]>("/allowlist", { queryParams }),
       );
     },
 
-    async addAllowlistRule(
+    addAllowlistRule(
       rule: Omit<AllowlistRule, "rule_id" | "created_at">,
     ): Promise<ApiResult<AllowlistRule>> {
-      return fetchJson<AllowlistRule>(
-        `${baseUrl}/allowlist`,
-        {
-          method: "POST",
-          headers: baseHeaders,
-          body: JSON.stringify(rule),
-        },
-        timeoutMs,
+      return callApi(() => http.post<AllowlistRule>("/allowlist", rule));
+    },
+
+    deleteAllowlistRule(ruleId: string): Promise<ApiResult<AllowlistRule>> {
+      return callApi(() =>
+        http.delete<AllowlistRule>(`/allowlist/${encodeURIComponent(ruleId)}`),
       );
     },
 
-    async deleteAllowlistRule(ruleId: string): Promise<ApiResult<AllowlistRule>> {
-      return fetchJson<AllowlistRule>(
-        `${baseUrl}/allowlist/${encodeURIComponent(ruleId)}`,
-        { method: "DELETE", headers: baseHeaders },
-        timeoutMs,
-      );
-    },
-
-    async getToolCallResult(entryId: string): Promise<ApiResult<ToolCallResult>> {
-      return fetchJson<ToolCallResult>(
-        `${baseUrl}/audit/${encodeURIComponent(entryId)}/result`,
-        { method: "GET", headers: baseHeaders },
-        timeoutMs,
+    getToolCallResult(entryId: string): Promise<ApiResult<ToolCallResult>> {
+      return callApi(() =>
+        http.get<ToolCallResult>(`/audit/${encodeURIComponent(entryId)}/result`),
       );
     },
   };
 }
-

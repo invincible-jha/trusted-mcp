@@ -21,6 +21,14 @@ Part of the [AumOS](https://github.com/aumos-ai) open-source agent infrastructur
 - Native adapters for Claude Desktop, Cursor, and VS Code that inject the proxy transparently into each client's MCP configuration
 - Extensible scanner registry via Python entry-points — third-party scanners install and register without modifying the proxy codebase
 
+## Current Limitations
+
+> **Transparency note**: We list known limitations to help you evaluate fit.
+
+- **Detection**: Regex heuristics only — no ML-based threat detection.
+- **Streaming**: No real-time streaming protocol support.
+- **Scope**: MCP protocol only — no generic API gateway capabilities.
+
 ## Quick Start
 
 Install from PyPI:
